@@ -1,0 +1,179 @@
+---
+title: "Qualitative Analysis Demo"
+author: "Mario Mercado Diaz"
+date: "2025-04-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(pacman)
+
+p_load(readxl, tidytext, dplyr, stringr, tm, ggplot2, forcats, tidyr, ggraph)
+
+```
+
+#Pulling Sustainment Pilot Survey Data
+```{r setup, include=FALSE}
+raw_sp_data <- read_excel("/Users/mariomercadodiaz/Documents/R/Qual Analysis Demo: Sustainment Data/CleanSPData.xlsx", 
+    col_names = T)
+View(raw_sp_data)
+
+```
+
+#Formatting SP Data
+```{r setup, include=FALSE}
+clean_sp_data <- raw_sp_data %>% #Renaming columns for accesible reading
+  rename(motivation = T1AdaptMotivation,
+          school = ContactInfoValid_4 ,
+          tier = TRAILSTraining
+           )
+clean_sp_data <- clean_sp_data[ c(5,8,17) ] #Keeping columns of interest: school, tier program, and feedback comments
+
+sp_words <- clean_sp_data %>% #Creating tokens: separating each word into a single row while still retaining other columns
+  unnest_tokens(word, motivation) %>% 
+  filter(!grepl('[0-9]', word)) #Remove numbers
+View(sp_words)
+
+tibble(sp_words) %>% #Tabulating top ten words
+  count(word, sort = T) 
+View(top10words)
+```
+
+```{r setup, include=FALSE}
+sp_words %>% #Tabulating amount of stop words and words of value. We see there are a lot of NAs and stop words
+  mutate(word2 = fct_lump_n(word, 5,
+                            other_level = "other words")) %>% 
+  count(word2) %>% 
+  ggplot(aes(x = reorder(word2, n),
+             y = n)) +
+  geom_col() +
+  coord_flip()
+
+sp_no_sw <- anti_join(sp_words, stop_words,
+                          by = "word")
+tibble(sp_no_sw) %>% #Tabulating top ten words
+  count(word, sort = T) 
+
+sp_no_sw <- na.omit(sp_no_sw) # removing NAs
+
+tibble(sp_no_sw) %>% #Tabulating top ten words. Now we got something we can work with
+  count(word, sort = T) 
+
+
+```
+
+
+#Running Analysis
+```{r setup, include=FALSE}
+word_frequencies <- #Getting a sense on what we have in terms of word frequencies through a wordcloud
+  sp_no_sw %>% 
+  count(word)
+
+wordcloud::wordcloud(words = word_frequencies$word,
+                     freq = word_frequencies$n,
+                     random.order = FALSE,
+                     scale = c(2, 0.5),
+                     min.freq = 1,
+                     max.words = 100,
+                     colors = c("#6FA8F5",
+                                "#FF4D45",
+                                "#FFC85E")
+                     )
+
+```
+
+```{r setup, include=FALSE}
+senti_sp <- sp_no_sw %>% #Running a sentiment analysis
+inner_join(get_sentiments(("bing"))) %>% #"Bing" is just one of the dictionaries used to calculate sentiments or assign value to words
+  count(word, sentiment, sort = TRUE)
+
+sp_bing <- sp_no_sw %>% #Combining and matching by word and sentiment. Mind you, there is only Tier 1 here. 
+  left_join(get_sentiments(lexicon = "bing"), by = "word") %>%
+  mutate(sentiment = ifelse(is.na(sentiment), "neutral", sentiment)) %>%
+  group_by(school) %>%
+  ungroup()
+sp_bing %>%print(n = 5)
+
+View(sp_bing)
+```
+
+
+```{r setup, include=FALSE}
+sp_bing_school <- sp_bing %>%  #Helpful for identifying possible problems across schools
+  count(school, sentiment) %>%
+  tidyr::spread(key = sentiment, value = n) %>%
+  select("school", "positive", "negative", "neutral")  # reorder columns
+sp_bing_school %>% print(n=5)
+
+sp_bing_school <- sp_bing %>%  #Calculating overall sentiments for each schools
+  count(school, sentiment) %>%
+  spread(key = sentiment, value = n, fill = 0) %>% #here we avoid the issue of summing NAs, if a school does not have a sentiment value
+  mutate(total = (positive + negative + neutral)) %>%   # create "total" column 
+  mutate(bing = ((positive - negative) / total)) %>% # create column with calculated score
+  select("school", "positive", "negative", "neutral", "total", "bing")  # reorder columns
+sp_bing_school %>% print(n=5)
+
+sp_bing_school %>%
+  select("school", "bing") %>%
+  print(n=5)
+
+```
+
+```{r setup, include=FALSE}
+
+senti_1 <- ggplot(sp_bing_school, aes(school, bing, fill = bing>0,)) + #Graphing school by motivation to keep delivering program
+  geom_col(show.legend = FALSE) +
+  scale_fill_manual(values=c("lightcoral","lightsteelblue3"))+
+  labs(x= NULL,y=NULL,
+       title="Bing Sentiment Scores for Motivations for Sustainment by School")+
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+plot(senti_1)
+
+```
+
+```{r setup, include=FALSE}
+#Creating bigram, observing how words are linked or related
+sp_bigram <- clean_sp_data %>% 
+  unnest_tokens(bigram, motivation, token = "ngrams", n = 2) #Joining by motivation
+sp_bigram
+
+sp_bigram %>% count(bigram, sort = TRUE) #Ranking most common bigrams
+
+sp_split <- #Splitting words into two to remove stop words
+  sp_bigram %>% 
+  separate(col = bigram,
+           into = c("word1", "word2"),
+           sep = " ")
+View(sp_split)
+
+``` 
+
+```{r setup, include=FALSE}
+
+sp_bigram_split <- #Removing stop words
+  sp_split %>% 
+  filter(!word1 %in% stop_words$word) %>% 
+  filter(!grepl('[0-9]', word1)) %>% 
+  filter(!word2 %in% stop_words$word) %>% 
+  filter(!grepl('[0-9]', word2))
+
+sp_bigram_count <- sp_bigram_split %>% 
+  count(word1, word2, sort = TRUE)
+View(sp_bigram_count)
+
+sp_bigram_split <- na.omit(sp_bigram_split) #Removing NA
+  
+sp_bigram_cleaned <- sp_bigram_split %>% #The Ns are very low, meaning we won't be able to make a meaningful network.
+  unite(col = bigram,
+        word1, word2,
+        sep = " ")
+print(sp_bigram_cleaned)
+
+sp_bigram_split %>% #There are many ways to further insight into qual data by just tabulating frequencies. 
+  filter(word2 == "students") %>%
+  count(word1, sort = TRUE)
+
+
+```
