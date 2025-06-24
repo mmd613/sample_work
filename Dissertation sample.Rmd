@@ -1,0 +1,1227 @@
+---
+title: "TRAILS Work Sample"
+author: "Mario Mercado Diaz"
+date: '2023-04-26'
+---
+
+## This R Markdown contains part of the code I utilized for my dissertation analysis. Below you will find instructions on how to
+## pull Census ACS and Decennial data, how to join the different data, and how to run some prliminary statistical analyses. 
+
+# Installing packages neccesary for data collection, analysis, and vizualization. 
+
+library (pacman)
+install.packages("tidyverse")
+install.packages("tidycensus")
+install.packages("rgdal") 
+install.packages("reshape")
+install.packages("mapview")
+install.packages("sf") 
+install.packages("purrrlyr")
+install.packages("spatialreg") 
+install.packages("summarytools") 
+install.packages("glmmfields")
+install.packages("spdep")
+install.packages("ngspatial")
+install.packages("pbapply")
+install.packages("AER")
+install.packages("pacman")
+
+library(pacman)
+p_load(tidyverse,tidycensus,scales,dplyr,reshape,spdep,spatialreg,purrr,pbapply,purrrlyr,sf,AER,broom,ngspatial,glmmfields,tigris,rgdal)
+
+options(tigris_use_cache = TRUE)
+
+options(scipen=7) #Turning off scientific notation
+
+census_api_key("67166e9d2bf470dbae39861369ab655600745340", install = TRUE) #Census API key to download data
+
+# Pulling data from the Census API service. These are the 5-year estimates for years 2010 and 2015 from the American Community Survey 
+
+acs_variable_list2010 <- load_variables(2014, "acs5", cache = TRUE) #Loading 2010 variable lists
+acs_variable_list2015 <- load_variables(2019, "acs5", cache = TRUE) #Loading 2015 variable lists
+
+st10 <- get_acs(geography = "tract", #Master chart with 2010 limited to Harris County, our area of interest. Important to include geometric feature for visualization later.
+            table = "S1901",         #Remember these are master data sheets that you will then have to split and recode. Only need to do this once, because
+            year = 2010,             #we only need the variable names in order to pull the data in the next step
+            state = "TX", 
+            county = "Harris County",
+            cache_table = TRUE,
+            geometry = TRUE,
+            )
+
+B01001_vars <-acs_variable_list2010 %>% #Age and Gender Group variables
+  filter(str_detect(name, "B01001_")) %>%
+  pull(name)
+
+B03001_vars <-acs_variable_list2010 %>% #Hispanic Nationality variables
+  filter(str_detect(name, "B03001_")) %>%
+  pull(name)
+
+B03002_vars <-acs_variable_list2010 %>% #Hispanic or Latino Origin by Race variables
+  filter(str_detect(name, "B03002_")) %>%
+  pull(name)
+  
+B05001_vars <-acs_variable_list2010 %>% #Nativity and Citizenship Stat variables
+  filter(str_detect(name, "B05001_")) %>%
+  pull(name)
+
+B08201_vars <-acs_variable_list2010 %>% #Household Size by Vehicles Avail variables
+  filter(str_detect(name, "B08201_")) %>%
+  pull(name)
+  
+B11001_vars <-acs_variable_list2010 %>% #Household Type variables
+  filter(str_detect(name, "B11001_")) %>%
+  pull(name)
+
+B12001_vars <-acs_variable_list2010 %>% #Marital status variables
+  filter(str_detect(name, "B12001_")) %>%
+  pull(name)
+  
+B14006_vars <-acs_variable_list2010 %>% #Poverty Status variables
+  filter(str_detect(name, "B14006_")) %>%
+  pull(name)
+  
+B21003_vars <-acs_variable_list2010 %>% #Veteran Status variables
+  filter(str_detect(name, "B21003_")) %>%
+  pull(name)
+  
+B22007_vars <-acs_variable_list2010 %>% #STAMP/SNAP Recipient variables
+  filter(str_detect(name, "B22007_")) %>%
+  pull(name)
+
+B23006_vars <-acs_variable_list2010 %>% #Educational Attainment variables
+  filter(str_detect(name, "B23006_")) %>%
+  pull(name)
+
+B23025_vars <-acs_variable_list2010 %>% #Employment Status variables
+  filter(str_detect(name, "B23025_")) %>%
+  pull(name)
+  
+B25002_vars <-acs_variable_list2010 %>% #Occupancy Status variables
+  filter(str_detect(name, "B25002_")) %>%
+  pull(name)
+  
+B25003_vars <-acs_variable_list2010 %>% #Tenure variables
+  filter(str_detect(name, "B25003_")) %>%
+  pull(name)
+  
+B25018_vars <-acs_variable_list2010 %>% #Median Room variables
+  filter(str_detect(name, "B25018_")) %>%
+  pull(name)
+  
+B25024_vars <-acs_variable_list2010 %>% #Units in structure variables
+  filter(str_detect(name, "B25024_")) %>%
+  pull(name)
+  
+  
+B19083_var <- c(gini10 = "B19083_001") #Relabelling GINI Variables for easier recall
+
+B25001_var <- c(houseunits10 = "B25001_001") #Relabelling housing units variable
+
+sumtab10_data <- c(avginc10 = "S1901_C01_013") #Relabelling average income variables 
+
+
+years <- lst(2014, 2019) #Adding a variable to differentiate years
+
+#Preparing variables: Here we will pull data by variable from Census database. It will be easier if we run loops to pull data from 2010 and 2015 estimates
+##Age and Sex Variables
+
+B01001_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B01001_vars,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+agegender1015 <- reduce(B01001_1015, rbind) #Joining and relabeling both years
+
+names(agegender1015)[names(agegender1015) == "B01001_002E"] <- "male" ##Creating sex groups. Data is not invidiual, it is tract-based
+names(agegender1015)[names(agegender1015) == "B01001_026E"] <- "female"
+names(agegender1015)[names(agegender1015) == "B01001_001E"] <- "total"
+
+agegender1015$minor <- (agegender1015$B01001_003E + agegender1015$B01001_004E + agegender1015$B01001_005E + ##Minor: Under 18
+                        agegender1015$B01001_006E + agegender1015$B01001_027E + agegender1015$B01001_028E + 
+                        agegender1015$B01001_029E + agegender1015$B01001_030E)
+                        
+
+agegender1015$youngadult <- (agegender1015$B01001_007E + agegender1015$B01001_008E + agegender1015$B01001_009E + ##Young Adult: 18 to 24
+                                agegender1015$B01001_010E + agegender1015$B01001_031E + agegender1015$B01001_032E + 
+                                agegender1015$B01001_033E + agegender1015$B01001_034E)
+
+agegender1015$adult <- (agegender1015$B01001_011E + agegender1015$B01001_012E + agegender1015$B01001_035E + ##Adult: 25 to 35
+                                agegender1015$B01001_036E)
+
+agegender1015$middleage <- (agegender1015$B01001_013E + agegender1015$B01001_014E + agegender1015$B01001_015E + ##Middle Age: 35 to 54
+                                agegender1015$B01001_016E + agegender1015$B01001_037E + agegender1015$B01001_038E + 
+                                agegender1015$B01001_039E + agegender1015$B01001_040E)
+
+agegender1015$olderadult <- (agegender1015$B01001_017E + agegender1015$B01001_018E + agegender1015$B01001_019E + ##Older adult: 55 to 64
+                                agegender1015$B01001_041E + agegender1015$B01001_042E + agegender1015$B01001_043E)
+
+agegender1015$senior <- (agegender1015$B01001_044E + agegender1015$B01001_045E + agegender1015$B01001_046E + ##Older adult: 64 and up
+                                agegender1015$B01001_047E + agegender1015$B01001_048E + agegender1015$B01001_049E +
+                                agegender1015$B01001_020E + agegender1015$B01001_021E + agegender1015$B01001_022E +
+                                agegender1015$B01001_023E + agegender1015$B01001_024E + agegender1015$B01001_025E)                          
+keeps <- c("GEOID", "NAME", "male", "female", "total", "minor", "youngadult", "adult", "middleage", "olderadult", "senior", "id")               
+agegender1015 <- agegender1015[keeps]  
+
+
+##Hispanic Nationalities Variables
+
+B03001_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B03001_vars,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+latiname1015 <- reduce(B03001_1015, rbind)
+
+names(latiname1015)[names(latiname1015) == "B03001_003E"] <- "tothisp" ##Creating nationality groups
+names(latiname1015)[names(latiname1015) == "B03001_004E"] <- "mxican"
+names(latiname1015)[names(latiname1015) == "B03001_005E"] <- "prican"
+names(latiname1015)[names(latiname1015) == "B03001_006E"] <- "cuban"
+names(latiname1015)[names(latiname1015) == "B03001_025E"] <- "vnzlan"
+
+keeps <- c("GEOID", "NAME", "tothisp", "prican", "cuban", "mxican", "vnzlan", "id", "geometry")
+
+latiname1015 <- latiname1015[keeps]  
+
+##Hispanic or Latino Origin by Race Variables
+
+B03002_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B03002_vars,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+hisprace1015 <- reduce(B03002_1015, rbind)
+
+names(hisprace1015)[names(hisprace1015) == "B03002_002E"] <- "totnhisp" ##Creating race and ethnicity groups
+names(hisprace1015)[names(hisprace1015) == "B03002_003E"] <- "nhispwhite"
+names(hisprace1015)[names(hisprace1015) == "B03002_004E"] <- "nhispblack"
+names(hisprace1015)[names(hisprace1015) == "B03002_005E"] <- "nhispaian"
+names(hisprace1015)[names(hisprace1015) == "B03002_006E"] <- "nhispasian"
+names(hisprace1015)[names(hisprace1015) == "B03002_007E"] <- "nhispnhopi"
+names(hisprace1015)[names(hisprace1015) == "B03002_008E"] <- "nhispothrace"
+
+hisprace1015$nhisptworace <- (hisprace1015$B03002_009E + hisprace1015$B03002_010E + hisprace1015$B03002_011E)
+
+names(hisprace1015)[names(hisprace1015) == "B03002_013E"] <- "hispwhite"
+names(hisprace1015)[names(hisprace1015) == "B03002_014E"] <- "hispblack"
+names(hisprace1015)[names(hisprace1015) == "B03002_015E"] <- "hispaian"
+names(hisprace1015)[names(hisprace1015) == "B03002_016E"] <- "hispasian"
+names(hisprace1015)[names(hisprace1015) == "B03002_017E"] <- "hispnhopi"
+names(hisprace1015)[names(hisprace1015) == "B03002_018E"] <- "hispothrace"
+
+hisprace1015$hisptworace <- (hisprace1015$B03002_019E + hisprace1015$B03002_020E + hisprace1015$B03002_021E)
+
+keeps <- c("GEOID", "NAME", "totnhisp", "nhispwhite", "nhispblack", "nhispaian", "nhispasian", "nhispnhopi", 
+            "nhispothrace", "nhisptworace", "hispwhite", "hispblack", "hispaian", "hispasian",  "hispnhopi",
+            "hispothrace", "hisptworace", "id", "geometry")
+
+hisprace1015 <- hisprace1015[keeps]  
+
+
+##Nativity and Citizenship Stat Variables
+
+B05001_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B05001_vars,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+natcitzn1015 <- reduce(B05001_1015, rbind)
+
+natcitzn1015$citizen <- (natcitzn1015$B05001_002E + natcitzn1015$B05001_003E + natcitzn1015$B05001_004E + 
+                          natcitzn1015$B05001_005E)
+names(natcitzn1015)[names(natcitzn1015) == "B05001_006E"] <- "notcitizen"
+
+keeps <- c("GEOID", "NAME", "citizen", "notcitizen", "id", "geometry")
+
+natcitzn1015 <- natcitzn1015[keeps]
+
+##Household Size by Vehicles Avail. Variables
+
+B08201_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B08201_vars,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+hsize1015 <- reduce(B08201_1015, rbind)
+
+names(hsize1015)[names(hsize1015) == "B08201_007E"] <- "onehouse"
+names(hsize1015)[names(hsize1015) == "B08201_013E"] <- "twohouse"
+names(hsize1015)[names(hsize1015) == "B08201_019E"] <- "threehouse"
+names(hsize1015)[names(hsize1015) == "B08201_025E"] <- "fourmrhouse"
+
+keeps <- c("GEOID", "NAME", "onehouse", "twohouse", "threehouse", "fourmrhouse", "id", "geometry")
+
+hsize1015 <- hsize1015[keeps]
+
+##Household Type Variables
+
+B11001_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B11001_vars,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+househldtype1015 <- reduce(B11001_1015, rbind)
+
+names(househldtype1015)[names(househldtype1015) == "B11001_003E"] <- "mcouple"
+names(househldtype1015)[names(househldtype1015) == "B11001_004E"] <- "singlep"
+names(househldtype1015)[names(househldtype1015) == "B11001_007E"] <- "nonfam"
+
+keeps <- c("GEOID", "NAME", "mcouple", "singlep", "singlep",  "id", "geometry")
+
+househldtype1015 <- househldtype1015[keeps]
+
+##Marital Status Variables
+
+B12001_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B12001_vars,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+maritalstat1015 <- reduce(B12001_1015, rbind)
+
+maritalstat1015$nmarried <- (maritalstat1015$B12001_003E + maritalstat1015$B12001_012E) 
+maritalstat1015$married <- (maritalstat1015$B12001_004E + maritalstat1015$B12001_013E) 
+maritalstat1015$widowed <- (maritalstat1015$B12001_009E + maritalstat1015$B12001_018E) 
+maritalstat1015$divorced <- (maritalstat1015$B12001_010E + maritalstat1015$B12001_019E) 
+
+keeps <- c("GEOID", "NAME", "nmarried", "married", "widowed", "divorced", "id", "geometry")
+
+maritalstat1015 <- maritalstat1015[keeps]
+
+##Poverty Status Variables
+
+B14006_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B14006_vars,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+povrate1015 <- reduce(B14006_1015, rbind)
+
+names(povrate1015)[names(povrate1015) == "B14006_002E"] <- "inpov"
+names(povrate1015)[names(povrate1015) == "B14006_001E"] <- "total"
+
+povrate1015$povrate <- ((povrate1015$inpov / povrate1015$total)*100) 
+
+keeps <- c("GEOID", "NAME", "inpov", "povrate", "id", "geometry")
+
+povrate1015 <- povrate1015[keeps]
+
+##Veteran Status Variables
+
+B21003_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B21003_vars,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+vetstat1015 <- reduce(B21003_1015, rbind)
+
+names(vetstat1015)[names(vetstat1015) == "B21003_002E"] <- "veteran"
+names(vetstat1015)[names(vetstat1015) == "B21003_007E"] <- "nonvet"
+
+keeps <- c("GEOID", "NAME", "veteran", "nonvet", "id", "geometry")
+vetstat1015 <- vetstat1015[keeps]
+
+##Welfare Recipients Variables 
+
+B22007_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B22007_vars,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+welfare1015 <- reduce(B22007_1015, rbind)
+
+names(welfare1015)[names(welfare1015) == "B22007_002E"] <- "recwelfare"
+
+keeps <- c("GEOID", "NAME", "recwelfare", "id", "geometry")
+welfare1015 <- welfare1015[keeps]
+
+##Educational Attainment variables
+
+B23006_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B23006_vars,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+educ1015 <- reduce(B23006_1015, rbind)
+
+names(educ1015)[names(educ1015) == "B23006_002E"] <- "lesshs"
+names(educ1015)[names(educ1015) == "B23006_006E"] <- "hseduc"
+names(educ1015)[names(educ1015) == "B23006_016E"] <- "somecoll"
+names(educ1015)[names(educ1015) == "B23006_023E"] <- "bachormore"
+
+keeps <- c("GEOID", "NAME", "lesshs", "hseduc", "somecoll", "bachormore", "id", "geometry")
+educ1015 <- educ1015[keeps]
+
+##Labor Force Status Variables
+
+B23025_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B23025_vars,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+labor1015 <- reduce(B23025_1015, rbind)
+
+names(labor1015)[names(labor1015) == "B23025_002E"] <- "inlaborf"
+names(labor1015)[names(labor1015) == "B23025_004E"] <- "employed"
+names(labor1015)[names(labor1015) == "B23025_005E"] <- "unemployed"
+names(labor1015)[names(labor1015) == "B23025_006E"] <- "armedforce"
+names(labor1015)[names(labor1015) == "B23025_007E"] <- "notlaborf"
+
+keeps <- c("GEOID", "NAME", "inlaborf", "employed", "unemployed", "armedforce", "notlaborf", "id", "geometry")
+labor1015 <- labor1015[keeps]
+
+##Occupancy Status Variables
+
+B25002_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B25002_vars,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+occup1015 <- reduce(B25002_1015, rbind)
+
+names(occup1015)[names(occup1015) == "B25002_002E"] <- "occupied"
+names(occup1015)[names(occup1015) == "B25002_003E"] <- "vacant"
+
+keeps <- c("GEOID", "NAME", "occupied", "vacant", "id", "geometry")
+occup1015 <- occup1015[keeps]
+
+##Tenure Variables 
+
+B25003_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B25003_vars,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+tenure1015 <- reduce(B25003_1015, rbind)
+
+names(tenure1015)[names(tenure1015) == "B25003_002E"] <- "owner"
+names(tenure1015)[names(tenure1015) == "B25003_003E"] <- "renter"
+
+keeps <- c("GEOID", "NAME", "owner", "renter", "id", "geometry")
+tenure1015 <- tenure1015[keeps]
+
+##Median Room variables
+
+B25018_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B25018_vars,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+mrooms1015 <- reduce(B25018_1015, rbind)
+
+names(mrooms1015)[names(mrooms1015) == "B25018_001E"] <- "medianroom"
+
+keeps <- c("GEOID", "NAME", "medianroom", "id", "geometry")
+mrooms1015 <- mrooms1015[keeps]
+
+##Units in Structure Variables
+
+B25024_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B25024_vars,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+rmhome1015 <- reduce(B25024_1015, rbind)
+
+names(rmhome1015)[names(rmhome1015) == "B25024_002E"] <- "onedetach"
+names(rmhome1015)[names(rmhome1015) == "B25024_003E"] <- "oneattach"
+names(rmhome1015)[names(rmhome1015) == "B25024_004E"] <- "tworooms"
+names(rmhome1015)[names(rmhome1015) == "B25024_005E"] <- "threefourrms"
+rmhome1015$fivemrrooms<- (rmhome1015$B25024_006E + rmhome1015$B25024_007E + rmhome1015$B25024_008E +
+                          rmhome1015$B25024_009E) 
+                          
+rmhome1015$mobilehome<- (rmhome1015$B25024_010E + rmhome1015$B25024_011E)
+
+keeps <- c("GEOID", "NAME", "onedetach", "oneattach", "tworooms", "threefourrms", "fivemrrooms", "mobilehome", "id", "geometry")
+rmhome1015 <- rmhome1015[keeps]
+
+##GINI Variables
+
+B19083_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B19083_var,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+gini1015 <- reduce(B19083_1015, rbind)
+
+names(gini1015)[names(gini1015) == "gini10E"] <- "gini"
+
+keeps <- c("GEOID", "NAME", "gini", "id", "geometry")
+gini1015 <- gini1015[keeps]
+
+##Geometry Variables: You will need these for visualization and geostatistical analysis
+geom15 <- get_acs(
+  geography = "tract", 
+  variables = B19083_var,
+  year = 2019, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  )
+
+keeps <- c("GEOID", "NAME",  "geometry")
+geom15 <- geom15[keeps]
+
+##Summary Table Variables
+
+avginc_1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = sumtab10_data,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+avginc_1015 <- reduce(avginc_1015, rbind)
+
+names(avginc_1015)[names(avginc_1015) == "avginc10E"] <- "avginc"
+
+keeps <- c("GEOID", "NAME", "avginc", "id", "geometry")
+avginc1015 <- avginc_1015[keeps]
+
+##Housing Units per Tract
+
+houseunits1015 <- map( #Establishes loop for 2010 & 2014 5 yr
+  years,
+  ~get_acs(
+  geography = "tract", 
+  variables = B25001_var,
+  year = .x, 
+  state = "TX", 
+  county = "Harris County", 
+  geometry = TRUE, 
+  output= "wide")
+) %>% 
+map2(years, ~ mutate(.x, id = .y))
+
+houseunits1015 <- reduce(houseunits1015, rbind)
+
+names(houseunits1015)[names(houseunits1015) == "houseunits10E"] <- "hunits"
+
+keeps <- c("GEOID", "NAME", "hunits", "id", "geometry")
+houseunits1015 <- houseunits1015[keeps]
+
+##Joining Data Frames into Master DataFrame
+
+seconddf <- list(avginc1015, educ1015, gini1015, hisprace1015, househldtype1015, houseunits1015, hsize1015, labor1015, latiname1015, maritalstat1015, mrooms1015, natcitzn1015, occup1015, povrate1015, rmhome1015, tenure1015, vetstat1015)
+
+df2 <- map(seconddf,  #Creating loop to drop geography column. Map_drf yielded too many problems
+  ~st_drop_geometry(.x))
+df2 <- as.data.frame (do.call(cbind, df2)) #Converting list to data.frame
+df2 <- df2[-c(5,6,11:13,15:17,33:35,38:41,43:45,50:52,58:60,66:68,73:75,77:79,82:84,87:89,92:94)] #deleting extra/repeated columns
+df2 <- df2[-c(59:61,64:66,69)]
+
+htx1015 <- merge(agegender1015,df2) #Creating master df (htx1015) with all sociodemo data and years
+head(htx1015)
+
+##Creating Key Indepent Variables: Average income, average poverty rate, and racial-ethnic % changes
+
+by(htx1015,htx1015$id,summary) #First, I render descriptives to observe changes in growth for avg population and pov rates for different ethnoracial groups. 
+whtx1015 <- st_drop_geometry(htx1015) #Dropping the geometry column to simplify coding. 
+
+whtx1015 <- pivot_wider (whtx1015, #Pivoting to wide for easier coding of percent change variables. 
+  id_cols = c(1:2),
+  names_from = id, 
+  values_from = c(4:71),
+  names_sep = "_", 
+  names_glue = "{.value}_{id}",
+  names_repair = "minimal"
+  )
+
+whtx1015$pcnonhwh <- ((whtx1015$nhispwhite_2019 / whtx1015$nhispwhite_2014)-1) *100 #Calculating % change for Non-Hispanic Whites
+whtx1015$pcnonhbk <- ((whtx1015$nhispblack_2019 / whtx1015$nhispblack_2014)-1) *100 #Non-Hispanic Blacks
+whtx1015$pchispan <- ((whtx1015$tothisp_2019 / whtx1015$tothisp_2014)-1) *100       #Total Hispanic Pop. 
+
+whtx1015$pcprborn <- ((whtx1015$prican_2019 / whtx1015$prican_2014)-1) *100         #Calculating % change for Puerto Rican-born
+whtx1015$pccbborn <- ((whtx1015$cuban_2019 / whtx1015$cuban_2014)-1) *100           #Cuban-born
+whtx1015$pcvzborn <- ((whtx1015$vnzlan_2019 / whtx1015$vnzlan_2014)-1) *100         #Venezuelan-born
+whtx1015$pcmxborn <- ((whtx1015$mxican_2019 / whtx1015$mxican_2014)-1) *100         #Mexican-born
+
+whtx1015$pcavgincome <- ((whtx1015$avginc_2019 / whtx1015$avginc_2014)-1) *100      #Calculating % change for avg. income. 
+whtx1015$logavginc_2014 <- log(whtx1015$avginc_2014)                                #Transforming log average income for 2010-14
+whtx1015$logavginc_2019 <- log(whtx1015$avginc_2019)                                #Transforming log average income for 2015-19
+
+whtx1015$mynonhwh_2014 <- ((whtx1015$nhispwhite_2014 / whtx1015$total_2014) *100)   #Creating Race/Ethn/Nationality proportion 2010-14 vars
+whtx1015$mynonhbk_2014 <- ((whtx1015$nhispblack_2014 / whtx1015$total_2014) *100)   #Non-Hispanic Blacks
+whtx1015$myhispan_2014 <- ((whtx1015$tothisp_2014 / whtx1015$total_2014) *100)      #Total Hispanic Pop. 
+
+whtx1015$myprborn_2014 <- ((whtx1015$prican_2014 / whtx1015$total_2014) *100)       #Puerto Rican-born
+whtx1015$mycbborn_2014 <- ((whtx1015$cuban_2014 / whtx1015$total_2014) *100)        #Cuban-born
+whtx1015$myvzborn_2014 <- ((whtx1015$vnzlan_2014 / whtx1015$total_2014) *100)       #Venezuelan-born
+whtx1015$mymxborn_2014 <- ((whtx1015$mxican_2014 / whtx1015$total_2014) *100)       #Mexican-born
+
+whtx1015$mynonhwh_2019 <- ((whtx1015$nhispwhite_2019 / whtx1015$total_2019) *100)   #Creating Race/Ethn/Nationality proportion 2010-19 vars
+whtx1015$mynonhbk_2019 <- ((whtx1015$nhispblack_2019 / whtx1015$total_2019) *100)   #Non-Hispanic Blacks
+whtx1015$myhispan_2019 <- ((whtx1015$tothisp_2019 / whtx1015$total_2019) *100)      #Total Hispanic Pop. 
+
+whtx1015$myprborn_2019 <- ((whtx1015$prican_2019 / whtx1015$total_2019) *100)       #Puerto Rican-born
+whtx1015$mycbborn_2019 <- ((whtx1015$cuban_2019 / whtx1015$total_2019) *100)        #Cuban-born
+whtx1015$myvzborn_2019 <- ((whtx1015$vnzlan_2019 / whtx1015$total_2019) *100)       #Venezuelan-born
+whtx1015$mymxborn_2019 <- ((whtx1015$mxican_2019 / whtx1015$total_2019) *100)       #Mexican-born
+
+whtx1015$prpostract <- ifelse(whtx1015$pcprborn > 0, 1, 0) #Creating dummy variables for increases and decreases in PRican pop
+whtx1015$prnegtract <- ifelse(whtx1015$pcprborn < 0, 1, 0) 
+
+whtx1015$cbpostract <- ifelse(whtx1015$pccbborn > 0, 1, 0) #Creating dummy variables for increases and decreases in Cuban pop
+whtx1015$cbnegtract <- ifelse(whtx1015$pccbborn < 0, 1, 0)
+
+whtx1015$vzpostract <- ifelse(whtx1015$pcvzborn > 0, 1, 0) #Creating dummy variables for increases and decreases in Venezuelan pop
+whtx1015$vznegtract <- ifelse(whtx1015$pcvzborn < 0, 1, 0)
+
+whtx1015$povrate_2014 <- ((whtx1015$inpov_2014 / whtx1015$total_2014)*100) #Creating poverty rate variables for 2010-2014
+whtx1015$povrate_2019 <- ((whtx1015$inpov_2019 / whtx1015$total_2019)*100) #Creating poverty rate variables for 2015-2019
+
+whtx1015$deltapov <- (whtx1015$povrate_2019 - whtx1015$povrate_2014)       #Creating change score variables for poverty rate
+whtx1015$deltanonhwh <- (whtx1015$mynonhwh_2019 - whtx1015$mynonhwh_2014)  #Creating change score variables for Non Hisp White prop.
+whtx1015$deltanonhbk <- (whtx1015$mynonhbk_2019 - whtx1015$mynonhbk_2014)  #Creating change score variables for Non Hisp Black prop.
+whtx1015$deltahisptot <- (whtx1015$myhispan_2019 - whtx1015$myhispan_2014) #Creating change score variables for Hisp prop.
+
+thtx1015 <- merge(whtx1015, geom15)  #Joining geometry variable back in. 
+
+thtx1015$nhispother_2019 <- (thtx1015$nhispothrace_2019 + thtx1015$nhisptworace_2019) #Adding more general race/ethnicity categories
+thtx1015$hispother_2019 <- (thtx1015$hispothrace_2019 + thtx1015$hisptworace_2019)
+thtx1015$hispaznami_2019 <- (thtx1015$hispaian_2019 + thtx1015$hispasian_2019 + thtx1015$hispnhopi_2019)
+
+#Data analysis: Here I begin a series of diagnostic testing that form the foundation of the main statistical analysis
+##Maping out population changes and census tract characteristics
+
+totpoppc <- thtx1015 %>% #Mapping percent changes in pop. averages in Harris County
+  mutate(pctotal = 100 * ((total_2019/total_2014)-1)) %>% 
+  ggplot(aes(fill = pctotal, geometry = geometry)) + 
+  geom_sf(color = NA) + 
+  coord_sf(crs = 26915) + 
+  scale_fill_gradientn(colors = viridis_pal()(9), limits=c(-100, 100), 
+                       na.value = "#BABABA") 
+
+print (totpoppc + labs(title = "Changes in Average Total Population \n per Census Tract (2010-2015)", 
+      fill = "Percent \n Change"))
+
+tothisppop <- thtx1015 %>% #Mapping total population per tract in Harris County
+  ggplot(aes(fill = tothisp_2019, geometry = geometry)) + 
+  geom_sf(color = NA) + 
+  coord_sf(crs = 26915) + 
+  scale_fill_gradientn(colors = viridis_pal()(9),
+                       na.value = "#BABABA") 
+
+print (tothisppop + labs(title = "Hispanic Population per Census Tract \n (ACS 5-yr 2015-2019)", 
+      fill = "Freq."))
+
+totprpop <- thtx1015 %>% #Mapping Puerto Rican Population per tract in Harris County
+  ggplot(aes(fill = prican_2019, geometry = geometry)) + 
+  geom_sf(color = NA) + 
+  coord_sf(crs = 26915) + 
+  scale_fill_gradientn(colors = viridis_pal()(9),
+                       na.value = "#BABABA") 
+
+print (totprpop + labs(title = "Puerto Rican-born Population per Census Tract \n (ACS 5-yr 2015-2019)", 
+      fill = "Freq."))
+
+totcbpop <- thtx1015 %>% #Mapping Cuban Population per tract in Harris County
+  ggplot(aes(fill = cuban_2019, geometry = geometry)) + 
+  geom_sf(color = NA) + 
+  coord_sf(crs = 26915) + 
+  scale_fill_gradientn(colors = viridis_pal()(9),
+                       na.value = "#BABABA") 
+
+print (totcbpop + labs(title = "Cuban-born Population per Census Tract \n (ACS 5-yr 2015-2019)", 
+      fill = "Freq."))
+
+totvzpop <- thtx1015 %>% #Mapping Venezuelan Population per tract in Harris County
+  ggplot(aes(fill = vnzlan_2019, geometry = geometry)) + 
+  geom_sf(color = NA) + 
+  coord_sf(crs = 26915) + 
+  scale_fill_gradientn(colors = viridis_pal()(9),
+                       na.value = "#BABABA") 
+
+print (totvzpop + labs(title = "Venezuelan-born Population per Census Tract \n (ACS 5-yr 2015-2019)", 
+      fill = "Freq."))
+      
+totmxpop <- thtx1015 %>% #Mapping Mexican Population per tract in Harris County
+  ggplot(aes(fill = mxican_2019, geometry = geometry)) + 
+  geom_sf(color = NA) + 
+  coord_sf(crs = 26915) + 
+  scale_fill_gradientn(colors = viridis_pal()(9),
+                       na.value = "#BABABA") 
+
+print (totmxpop + labs(title = "Mexican-born Population per Census Tract \n (ACS 5-yr 2015-2019)", 
+      fill = "Freq."))
+      
+      
+pcgrps <- list(  #Creating a percent change list for facetted mapping 
+  'pchispan'= "Total Hispanic Pop.",
+  'pcnonhwh'= "Non-Hisp. Whites",
+  'pcnonhbk'= "Non-Hisp. Blacks", 
+  'pccbborn'= "Cuban-Born", 
+  'pcprborn'= "Puerto Rican-born",
+  'pcvzborn'= "Venezuelan-born",
+  'pcmxborn'= "Mexican-born")
+  
+pcgrps_labeller <- function(variable,value){
+  return(pcgrps[value])} 
+      
+plotpcgrps <- thtx1015 %>% #Faceted mapping for Racial and Ethnic Group percent changes
+  pivot_longer (139:145, names_to = "population",
+            values_to = "pchanges") %>%    #Mapping percent changes in pop. averages in Harris County
+  ggplot (aes(fill = pchanges, geometry=geometry)) + 
+  facet_wrap (vars(population), labeller = "pcgrps_labeller") +
+  geom_sf(color = NA) + 
+  coord_sf(crs = 26915) + 
+  scale_fill_gradientn(colors = viridis_pal()(9), limits=c(-100, 100), 
+                       na.value = "#BABABA") 
+
+print (plotpcgrps + labs(title = "Changes in Pct Changes for Racial and Ethnic Grps \n per Census Tract (2010-2015)", 
+      fill = "Percent \n Change")
+
+pcpovrate_plot <- htx1015 %>% #Mapping poverty rates in Harris County
+  ggplot(aes(fill = povrate, geometry = geometry)) + 
+  facet_wrap(~id) +
+  geom_sf(color = NA) + 
+  coord_sf(crs = 26915) + 
+  scale_fill_viridis_c(option = "D") 
+  
+print(pcpovrate_plot + labs(title = "Poverty Rates Across Census Tracts (2010-2015)", 
+      fill = "Poverty \n Rate"))
+
+avginc_plot <- htx1015 %>% #Mapping average income in Harris County
+  ggplot(aes(fill = avginc, geometry = geometry)) + 
+  facet_wrap(~id) +
+  geom_sf(color = NA) + 
+  coord_sf(crs = 26915) + 
+  scale_fill_gradientn(colors = viridis_pal()(9), limits=c(0, 200000), breaks=c(0,25000,50000,75000,100000), 
+  na.value = "#BABABA") 
+  
+print(avginc_plot + labs(title = "Average Income per Census Tracts (2010-2015)", 
+      fill = "Average \n Income"))
+
+hist(thtx1015$logavginc_2014) #Exploring distributions of dependent variables
+hist(thtx1015$logavginc_2019)
+
+hist(thtx1015$deltapov)
+
+hist(thtx1015$deltanonhwh)
+hist(thtx1015$deltanonhbk)
+hist(thtx1015$deltahisptot)
+
+##Mapping out census tracts of interest. These are the top six census tracts with the highest increase in our populations of interest
+download.file("https://www2.census.gov/geo/tiger/TIGER2015/TRACT/tl_2015_48_tract.zip", "tl_2015_48_tract.zip")
+unzip("tl_2015_48_tract.zip", exdir = "tl_2015_48_tract")
+
+tx <- readOGR(dsn = "tl_2015_48_tract", verbose = FALSE)
+tx_harris_county <- tx[which(tx$COUNTYFP %in% "201"),]
+
+head(tx_harris_county)
+
+point_locations <- data.frame(lat=c(29.944867, 30.088685, 29.821925, 29.977131, 30.133083, 29.733064, 29.759176),
+                              lon=c(-95.709147, -95.466052, -95.730915, -95.169854, -95.539554, -95.363115))
+
+library(leaflet)
+
+leaflet(tx_harris_county) %>%
+  setView(lng = mean(as.numeric(point_locations$lon), na.rm=TRUE), 
+          lat = mean(as.numeric(point_locations$lat), na.rm=TRUE), zoom = 9) %>%
+  addPolygons(fillColor = "white",
+              fillOpacity = 1,
+              weight = 1,
+              opacity = 0.5,
+              color = "black",
+              label = paste(tx_harris_county$NAMELSAD, 
+                            ", GEOID ", 
+                            tx_harris_county$GEOID, 
+                            sep=""),
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", 
+                             padding = "3px 8px"),
+                textsize = "13px",
+                direction = "auto")) %>%
+  addMarkers(
+    lng = -95.709147, lat = 29.944867,
+    label = "Tract 5430.02",
+    labelOptions = labelOptions(noHide = T, textsize = "12px")) %>% 
+   addMarkers(
+    lng = -95.466052, lat = 30.088685,
+    label = "Tract 5552",
+    labelOptions = labelOptions(noHide = T, textsize = "12px", direction = "right")) %>%
+  addMarkers(
+    lng = -95.730915, lat = 29.821925,
+    label = "Tract 5423.01",
+    labelOptions = labelOptions(noHide = T, textsize = "12px")) %>%
+  addMarkers(
+    lng = -95.169854, lat = 29.977131,
+    label = "Tract 2504.02",
+    labelOptions = labelOptions(noHide = T, textsize = "12px")) %>%
+  addMarkers(
+    lng = -95.539554, lat = 30.133083,
+    label = "Tract 5553.02",
+    labelOptions = labelOptions(noHide = T, textsize = "12px", direction = "left")) %>%
+  addMarkers(
+    lng = -95.547570, lat = 29.733064,
+    label = "Tract 4323",
+    labelOptions = labelOptions(noHide = T, textsize = "12px")) %>% 
+  addMarkers(
+    lng = -95.363115, lat = 29.759176,
+    label = "Downtown Houston",
+    labelOptions = labelOptions(noHide = T, textsize = "12px", direction = "right")) 
+
+
+##Testing for Spatial Auto-Correlations: Moran Tests for our outcome variables
+
+summary(htx1015$geometry) #Preparing for Spatial Autocorrelation
+class(htx1015$geometry)
+
+htxln<-poly2nb(htx1015$geometry, row.names=htx1015$GEOID, queen=TRUE) #Exploring neighborhood connectivity, Making "Queen" neighbors
+summary(htxln)
+
+htxcw<-nb2listw(htxln, style="W", zero.policy = TRUE, na.action = na.omit) #Applying geo weights
+summary(htxcw)
+
+mtinc_14 <-moran.test(thtx1015$logavginc_2014, htxcw, #Testing Spatial AutoC on Logged Avg. Income 2014) 
+           na.action = na.omit)
+
+mtinc_19 <-moran.test(thtx1015$logavginc_2019, htxcw,
+           na.action = na.omit)
+           
+mcinc_19 <-moran.mc(thtx1015$logavginc_2019, htxcw, #Running Moran-MontiCarlo for Log Inc in 2019
+           na.action = na.omit, nsim=599)
+           
+plot(mcinc_19)
+
+mtdpov <-moran.test(thtx1015$deltapov, htxcw,
+           na.action = na.omit)
+           
+mcdpov <-moran.mc(thtx1015$deltapov, htxcw, #Running Moran-MontiCarlo for Delta Poverty Rate
+           na.action = na.omit, nsim=599)
+plot(mcdpov)
+           
+mtdnonhwh <-moran.test(thtx1015$deltanonhwh, htxcw,
+           na.action = na.omit)
+
+mcdnonhwh <-moran.mc(thtx1015$deltanonhwh, htxcw, #Running Moran-MontiCarlo for Delta NonH Whites
+           na.action = na.omit, nsim=599)
+plot(mcdnonhwh)
+
+mtdnonhbk <-moran.test(thtx1015$deltanonhbk, htxcw,
+           na.action = na.omit)
+           
+mcdnonhbk <-moran.mc(thtx1015$deltanonhbk, htxcw, #Running Moran-MontiCarlo for Delta NonH Blacks
+           na.action = na.omit, nsim=599)
+plot(mcdnonhbk)
+
+listmts <- list(mtinc_19,mtdpov, mtdnonhwh, mtdnonhbk) # Creating list for export to MTests
+
+all_mtmodels <- map_dfr(listmts, 
+                ~tidy(.x))
+
+write.csv(all_mtmodels, "morantexts.csv") #Exporting df for Moran I tests
+
+listmcs <- list(mcinc_19,mcdpov, mcdnonhwh, mcdnonhbk) # Creating list for export MC tests
+
+all_mcmodels <- map_dfr(listmcs, 
+                ~tidy(.x))
+
+write.csv(all_mcmodels, "moranmctets.csv") #Exporting df for Moran MC tests
+
+
+tract_geoms <- st_geometry(thtx1015$geometry) #Setting census tract geometries. 
+tntrd <- st_centroid(tract_geoms) #Finding centroid for plotting neighbors
+coords <- st_coordinates(tntrd)
+head(coords)
+
+plot(tract_geoms, border = 'lightgrey')
+neighborqn_map <- plot(htxcw, coords, col="blue", add=TRUE) #Mapping "queen" neighbors
+
+##Building Regression Equations: Divided by positive and negative pop. change per dummy variable 
+
+reg.incpost=logavginc_2019~prpostract+cbpostract+vzpostract+ #Constructing regression equation for testing changes in log average income for                                                                                                          tracts with positive growth of our target populations.
+  male_2019+female_2019+
+  youngadult_2019+adult_2019+middleage_2019+olderadult_2019+senior_2019+
+  avginc_2019+
+  lesshs_2019+hseduc_2019+somecoll_2019+bachormore_2019+
+  gini_2019+
+  nhispwhite_2019+nhispblack_2019+nhispaian_2019+nhispasian_2019+nhispother_2019+hispwhite_2019+hispblack_2019+hispaznami_2019+hispother_2019+
+  inlaborf_2019+employed_2019+unemployed_2019+armedforce_2019+notlaborf_2019+
+  nmarried_2019+married_2019+widowed_2019+divorced_2019+
+  citizen_2019+notcitizen_2019+
+  povrate_2019+
+  owner_2019+renter_2019+
+  veteran_2019+nonvet_2019
+
+reg.incnegt=logavginc_2019~prnegtract+cbnegtract+vznegtract+ #Constructing regression equation for testing changes in log average income for                                                                                                            tracts with negative growth of our target populations.
+  male_2019+female_2019+
+  youngadult_2019+adult_2019+middleage_2019+olderadult_2019+senior_2019+
+  avginc_2019+
+  lesshs_2019+hseduc_2019+somecoll_2019+bachormore_2019+
+  gini_2019+
+  nhispwhite_2019+nhispblack_2019+nhispaian_2019+nhispasian_2019+nhispother_2019+hispwhite_2019+hispblack_2019+hispaznami_2019+hispother_2019+
+  inlaborf_2019+employed_2019+unemployed_2019+armedforce_2019+notlaborf_2019+
+  nmarried_2019+married_2019+widowed_2019+divorced_2019+
+  citizen_2019+notcitizen_2019+
+  povrate_2019+
+  owner_2019+renter_2019+
+  veteran_2019+nonvet_2019
+
+reg.povpost=deltapov~prpostract+cbpostract+vzpostract+ #Constructing regression equation for testing changes in delta poverty for                                                                                                                       tracts with positive growth of our target populations.
+  male_2019+female_2019+
+  youngadult_2019+adult_2019+middleage_2019+olderadult_2019+senior_2019+
+  avginc_2019+
+  lesshs_2019+hseduc_2019+somecoll_2019+bachormore_2019+
+  gini_2019+
+  nhispwhite_2019+nhispblack_2019+nhispaian_2019+nhispasian_2019+nhispother_2019+hispwhite_2019+hispblack_2019+hispaznami_2019+hispother_2019+
+  inlaborf_2019+employed_2019+unemployed_2019+armedforce_2019+notlaborf_2019+
+  nmarried_2019+married_2019+widowed_2019+divorced_2019+
+  citizen_2019+notcitizen_2019+
+  povrate_2019+
+  owner_2019+renter_2019+
+  veteran_2019+nonvet_2019
+
+reg.povnegt=deltapov~prnegtract+cbnegtract+vznegtract+ #Constructing regression equation for testing changes in delta poverty for                                                                                                                       tracts with negative growth of our target populations.
+  male_2019+female_2019+
+  youngadult_2019+adult_2019+middleage_2019+olderadult_2019+senior_2019+
+  avginc_2019+
+  lesshs_2019+hseduc_2019+somecoll_2019+bachormore_2019+
+  gini_2019+
+  nhispwhite_2019+nhispblack_2019+nhispaian_2019+nhispasian_2019+nhispother_2019+hispwhite_2019+hispblack_2019+hispaznami_2019+hispother_2019+
+  inlaborf_2019+employed_2019+unemployed_2019+armedforce_2019+notlaborf_2019+
+  nmarried_2019+married_2019+widowed_2019+divorced_2019+
+  citizen_2019+notcitizen_2019+
+  povrate_2019+
+  owner_2019+renter_2019+
+  veteran_2019+nonvet_2019
+  
+reg.dwhpost=deltanonhwh~prpostract+cbpostract+vzpostract+ #Constructing regression equation for testing changes in proportions for nonH Whites                                                                                                          for tracts with positive growth of our target populations.
+  male_2019+female_2019+
+  youngadult_2019+adult_2019+middleage_2019+olderadult_2019+senior_2019+
+  avginc_2019+
+  lesshs_2019+hseduc_2019+somecoll_2019+bachormore_2019+
+  gini_2019+
+  nhispwhite_2019+nhispblack_2019+nhispaian_2019+nhispasian_2019+nhispother_2019+hispwhite_2019+hispblack_2019+hispaznami_2019+hispother_2019+
+  inlaborf_2019+employed_2019+unemployed_2019+armedforce_2019+notlaborf_2019+
+  nmarried_2019+married_2019+widowed_2019+divorced_2019+
+  citizen_2019+notcitizen_2019+
+  povrate_2019+
+  owner_2019+renter_2019+
+  veteran_2019+nonvet_2019
+
+reg.dwhnegt=deltanonhwh~prnegtract+cbnegtract+vznegtract+  #Constructing regression equation for testing changes in proportions for nonH Whites                                                                                                             for tracts with negative growth of our target populations.
+  male_2019+female_2019+
+  youngadult_2019+adult_2019+middleage_2019+olderadult_2019+senior_2019+
+  avginc_2019+
+  lesshs_2019+hseduc_2019+somecoll_2019+bachormore_2019+
+  gini_2019+
+  nhispwhite_2019+nhispblack_2019+nhispaian_2019+nhispasian_2019+nhispother_2019+hispwhite_2019+hispblack_2019+hispaznami_2019+hispother_2019+
+  inlaborf_2019+employed_2019+unemployed_2019+armedforce_2019+notlaborf_2019+
+  nmarried_2019+married_2019+widowed_2019+divorced_2019+
+  citizen_2019+notcitizen_2019+
+  povrate_2019+
+  owner_2019+renter_2019+
+  veteran_2019+nonvet_2019
+  
+reg.dbkpost=deltanonhbk~prpostract+cbpostract+vzpostract+ #Constructing regression equation for testing changes in proportions for nonH Blacks                                                                                                              for tracts with positive growth of our target populations.
+  male_2019+female_2019+
+  youngadult_2019+adult_2019+middleage_2019+olderadult_2019+senior_2019+
+  avginc_2019+
+  lesshs_2019+hseduc_2019+somecoll_2019+bachormore_2019+
+  gini_2019+
+  nhispwhite_2019+nhispblack_2019+nhispaian_2019+nhispasian_2019+nhispother_2019+hispwhite_2019+hispblack_2019+hispaznami_2019+hispother_2019+
+  inlaborf_2019+employed_2019+unemployed_2019+armedforce_2019+notlaborf_2019+
+  nmarried_2019+married_2019+widowed_2019+divorced_2019+
+  citizen_2019+notcitizen_2019+
+  povrate_2019+
+  owner_2019+renter_2019+
+  veteran_2019+nonvet_2019
+
+reg.dbknegt=deltanonhbk~prnegtract+cbnegtract+vznegtract+  #Constructing regression equation for testing changes in proportions for nonH Blacks                                                                                                               for tracts with negative growth of our target populations.
+  male_2019+female_2019+
+  youngadult_2019+adult_2019+middleage_2019+olderadult_2019+senior_2019+
+  avginc_2019+
+  lesshs_2019+hseduc_2019+somecoll_2019+bachormore_2019+
+  gini_2019+
+  nhispwhite_2019+nhispblack_2019+nhispaian_2019+nhispasian_2019+nhispother_2019+hispwhite_2019+hispblack_2019+hispaznami_2019+hispother_2019+
+  inlaborf_2019+employed_2019+unemployed_2019+armedforce_2019+notlaborf_2019+
+  nmarried_2019+married_2019+widowed_2019+divorced_2019+
+  citizen_2019+notcitizen_2019+
+  povrate_2019+
+  owner_2019+renter_2019+
+  veteran_2019+nonvet_2019
+
+##Running OLS Regressions: This well tell us more about any correlations between outcome and control variables
+
+nona_thtx1015 <- na.omit(thtx1015) #Creating new data.frame without NAs
+nona_htxln<-poly2nb(nona_thtx1015$geometry, row.names=nona_thtx1015$GEOID, queen=TRUE) #Creating weight list without NAs
+summary(nona_htxln)
+
+nona_htxcw<-nb2listw(nona_htxln, style="W", zero.policy = TRUE) #Applying weights
+summary(nona_htxcw, zero.policy = TRUE)
+
+results_lmincpos=lm(reg.incpost,data=nona_thtx1015) #Simple OLS regression on positive tract dummies for Logged Avg. Inc. 
+summary(results_lmincpos)
+
+nona_thtx1015$incpos_predicted <- predict(results_lmincpos)   # Save the predicted values
+nona_thtx1015$incpos_residuals <- residuals(results_lmincpos) # Save the residual values
+
+ggplot(nona_thtx1015, aes(x = logavginc_2019, y = GEOID)) +   # Plotting residuals
+  geom_segment(aes(xend = logavginc_2019, yend = incpos_predicted)) +
+  geom_point() +
+  geom_point(aes(y = incpos_predicted), shape = 1)
+
+results_lmincneg=lm(reg.incnegt,data=nona_thtx1015) #Simple OLS regression on negative tract dummies for Logged Avg. Inc. 
+summary(results_lmincneg)
+
+nona_thtx1015$incneg_predicted <- predict(results_lmincneg)   # Save the predicted values
+nona_thtx1015$incneg_residuals <- residuals(results_lmincneg) # Save the residual values
+
+lm.morantest(results_lmincpos, nona_htxcw, zero.policy = TRUE) #Morans Correlation for OLS regression residuals with Queen Spatial Matrix
+lm.morantest(results_lmincneg, nona_htxcw, zero.policy = TRUE)
+
+tidy_regincpoc <- tidy(summary(results_lmincpos)) #Exporting Log Avg. Income OLS 
+write.csv(tidy_regincpoc, "ols_incpos.csv")
+
+tidy_regincneg <- tidy(summary(results_lmincneg)) #Exporting Log Avg. Income OLS 
+write.csv(tidy_regincneg, "ols_incneg.csv") 
+
+results_lmpovpos=lm(reg.povpost,data=nona_thtx1015) #Simple OLS regression on positive tract dummies for Delta Pov Rate. 
+summary(results_lmpovpos)
+
+nona_thtx1015$povpos_predicted <- predict(results_lmpovpos)   # Save the predicted values
+nona_thtx1015$povpos_residuals <- residuals(results_lmpovpos) # Save the residual values
+
+ggplot(nona_thtx1015, aes(x = logavginc_2019, y = GEOID)) +
+  geom_segment(aes(xend = logavginc_2019, yend = incpos_predicted)) +
+  geom_point() +
+  geom_point(aes(y = incpos_predicted), shape = 1)
+
+results_lmpovneg=lm(reg.povnegt,data=nona_thtx1015) #Simple OLS regression on negative tract dummies for Delta Pov Rate. 
+summary(results_lmpovneg)
+
+nona_thtx1015$povneg_predicted <- predict(results_lmpovneg)   # Save the predicted values
+nona_thtx1015$povneg_residuals <- residuals(results_lmpovneg) # Save the residual values
+
+lm.morantest(results_lmpovpos, nona_htxcw, zero.policy = TRUE) #Morans Correlation for OLS regression residuals with Queen Spatial Matrix
+lm.morantest(results_lmpovneg, nona_htxcw, zero.policy = TRUE)
+
+tidy_regpovpoc <- tidy(summary(results_lmpovpos)) #Exporting Log Avg. Income OLS 
+write.csv(tidy_regpovpoc, "ols_povpos.csv")
+
+tidy_regpovneg <- tidy(summary(results_lmpovneg)) #Exporting Log Avg. Income OLS 
+write.csv(tidy_regpovneg, "ols_povneg.csv") 
+
+results_lmdwhpos=lm(reg.dwhpost,data=nona_thtx1015) #Simple OLS regression on positive tract dummies for Delta Non-H Whites. 
+summary(results_lmdwhpos)
+
+nona_thtx1015$dwhpos_predicted <- predict(results_lmdwhpos)   # Save the predicted values
+nona_thtx1015$dwhpos_residuals <- residuals(results_lmdwhpos) # Save the residual values
+
+ggplot(nona_thtx1015, aes(x = logavginc_2019, y = GEOID)) +
+  geom_segment(aes(xend = logavginc_2019, yend = incpos_predicted)) +
+  geom_point() +
+  geom_point(aes(y = incpos_predicted), shape = 1)
+
+results_lmdwhneg=lm(reg.dwhnegt,data=nona_thtx1015) #Simple OLS regression on negative tract dummies for Delta Non-H Whites. 
+summary(results_lmdwhneg)
+
+nona_thtx1015$dwhneg_predicted <- predict(results_lmdwhneg)   # Save the predicted values
+nona_thtx1015$dwhneg_residuals <- residuals(results_lmdwhneg) # Save the residual values
+
+lm.morantest(results_lmdwhpos, nona_htxcw, zero.policy = TRUE) #Morans Correlation for OLS regression residuals with Queen Spatial Matrix
+lm.morantest(results_lmdwhneg, nona_htxcw, zero.policy = TRUE)
+
+tidy_regdwhpoc <- tidy(summary(results_lmdwhpos)) #Exporting Log Avg. Income OLS 
+write.csv(tidy_regdwhpoc, "ols_dwhpos.csv")
+
+tidy_regdwhneg <- tidy(summary(results_lmdwhneg)) #Exporting Log Avg. Income OLS 
+write.csv(tidy_regdwhneg, "ols_dwhneg.csv")
+
+results_lmdbkpos=lm(reg.dbkpost,data=nona_thtx1015) #Simple OLS regression on positive tract dummies for Delta Non-H Blacks. 
+summary(results_lmdbkpos)
+
+nona_thtx1015$dbkpos_predicted <- predict(results_lmdbkpos)   # Save the predicted values
+nona_thtx1015$dbkpos_residuals <- residuals(results_lmdbkpos) # Save the residual values
+
+ggplot(nona_thtx1015, aes(x = logavginc_2019, y = GEOID)) +
+  geom_segment(aes(xend = logavginc_2019, yend = incpos_predicted)) +
+  geom_point() +
+  geom_point(aes(y = incpos_predicted), shape = 1)
+
+results_lmdbkneg=lm(reg.dbknegt,data=nona_thtx1015) #Simple OLS regression on negative tract dummies for Delta Non-H Blacks. 
+summary(results_lmdbkneg)
+
+nona_thtx1015$dbkneg_predicted <- predict(results_lmdbkneg)   # Save the predicted values
+nona_thtx1015$dbkneg_residuals <- residuals(results_lmdbkneg) # Save the residual values
+
+lm.morantest(results_lmdbkpos, nona_htxcw, zero.policy = TRUE) #Morans Correlation for OLS regression residuals with Queen Spatial Matrix
+lm.morantest(results_lmdbkneg, nona_htxcw, zero.policy = TRUE)
+
+tidy_regdbkpoc <- tidy(summary(results_lmdbkpos)) #Exporting Log Avg. Income OLS 
+write.csv(tidy_regdbkpoc, "ols_dbkpos.csv")
+
+tidy_regdbkneg <- tidy(summary(results_lmdbkneg)) #Exporting Log Avg. Income OLS 
+write.csv(tidy_regdbkneg, "ols_dbkneg.csv")
+
+lmLMtests_dbkpost <- lm.LMtests(results_lmdbkpos, nona_htxcw, test=c("LMerr", "LMlag", "RLMerr", "RLMlag", "SARMA"), zero.policy = TRUE) #Running robust lm tests on positive increase                                                         delts non. Hispanic Black  to determine which spatial regression models would be best suited
+lmLMtests_dbkpost
+
+lmLMtests_dbknegt <- lm.LMtests(results_lmdbkneg, nona_htxcw, test=c("LMerr", "LMlag", "RLMerr", "RLMlag", "SARMA"), zero.policy = TRUE) #Running robust lm tests on negative increase                                                         delts non. Hispanic Black  to determine which spatial regression models would be best suited
+lmLMtests_dbknegt ###LM Lag are marginally statistically significant on both tests
+
+##Spatial regression models: LagSar and GLM models
+    
+lag_dbkpost <- lagsarlm(reg.dbkpost, data=nona_thtx1015, nona_htxcw, zero.policy = TRUE) #Spatial Lag Model for Delta Non-Hispanic Black: Positive Tracts
+summary(lag_dbkpost)
+
+impacts(lag_dbkpost, listw=nona_htxcw)
+summary(impacts(lag_dbkpost, listw=nona_htxcw, R=599), zstats=TRUE)
+
+lag_dbknegt <- lagsarlm(reg.dbknegt, data=nona_thtx1015, nona_htxcw, zero.policy = TRUE) #Spatial Lag Model for Delta Non-Hispanic Black: Negative Tracts
+summary(lag_dbknegt)
+
+impacts(lag_dbknegt, listw=nona_htxcw)
+summary(impacts(lag_dbknegt, listw=nona_htxcw, R=599), zstats=TRUE)
+
+
+
+
+
+
+
+
+
