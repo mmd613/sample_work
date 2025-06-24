@@ -1,0 +1,135 @@
+---
+title: "Work Sample: City of Philadelphia"
+author: "Mario Mercado Diaz"
+date: "2022-06-26"
+output: html_document
+---
+
+library(dplyr)
+library(readr)
+library(knitr)
+library(tidyr)
+library(ggplot2)
+library(mlogit)
+library(stargazer)
+
+##Loading data
+car_ped_stopsw <- read_csv("~/Documents/CoP /car_ped_stops.csv") #Loading data for pediatrian stops
+View(car_ped_stopsw)
+
+##Summarizing data
+summary(car_ped_stopsw)
+
+tot_stops <- as.data.frame(table(car_ped_stopsw$districtoccur), #Calculating total number of stops per district
+      responseName = "totstops", stringsAsFactors = TRUE)
+
+dayt_stops <- as.data.frame(table(car_ped_stopsw$districtoccur,car_ped_stopsw$weekday), #Calculating total number of stops per day
+      responseName = "", stringsAsFactors = TRUE)    
+
+sumdf <- merge(tot_stops, dayt_stops, by.x = "Var1", by.y = "Var1") #Merging new variables
+  
+sd_days <- sumdf %>%  #Calculating standard deviations by district and by day for deviations for stops per day
+  group_by(Var1,Var2) %>%
+  summarise(  
+    mean = mean(c.x.),
+    s = mean^2, 
+    m = sum(s)/(154-1), 
+    sd = sqrt(m), .groups='keep') 
+    
+sumdf$sd <- sd_days$sd
+sumdf$mean <- sd_days$mean
+
+stop_type <-as.data.frame.matrix(table(car_ped_stopsw$districtoccur, car_ped_stopsw$stoptype), #Dividing stop types
+  stringsAsFactors = TRUE)
+
+sumdf$pedestrian <- stop_type$pedestrian
+sumdf$vehicle <- stop_type$vehicle
+
+sumdf$pedstop_prop <- ((stop_type$pedestrian/sumdf$totstops)*100) #Creating proportion variable for stops per district
+
+names(sumdf)[names(sumdf) == 'Var1'] <- 'district' #Relabeling for accuracy
+names(sumdf)[names(sumdf) == 'Var2'] <- 'day_stop'
+names(sumdf)[names(sumdf) == 'c.x.'] <- 'stops_perday'
+sumdf <- sumdf[-c(6:8)]
+
+sumdf2 <-sumdf[order(sumdf$totstops, decreasing=TRUE),]
+exerciseone_tab <- kable(sumdf2,
+    col.names = c("District",
+                  "Total Stops",
+                  "Day of Stop",
+                  "No. of Stops per Day",
+                  "Standard Deviation",
+                  "Prop. of Pedestrian Stops"), 
+    caption = "Exercise One Summary Table",
+    format = "markdown")
+    
+##Separating Race and Ethnicity variables
+dsample <- separate(car_ped_stopsw, #Diving into race and ethnicity
+    col = 12, 
+    c('race', 'latino')) #I would argue that having an interaction term would be useful as well, especially when studying inequality and discrimination. 
+dsample$latino[which(dsample$latino == "Non")] = "NonHisp"  #Cleaning variables  
+dsample$latino[which(dsample$latino == "Latino")] = "Latino/Hisp"  #Cleaning variables  
+dsample$latino[which(dsample$latino == "Indian")] = "NonHisp"
+dsample$race[which(dsample$race == "American")] = "NAme"
+dsample$race[which(dsample$race == "Unknown")] = NA
+
+##Preparing Visualizations
+stops_plot <- dsample %>% #Ploting only by Stop Type
+  mutate(date = as.Date(datetimeoccur)) %>% 
+  count(date, stoptype, name = "stopsperday") %>% 
+stops_plot
+
+ggplot(data = stops_plot, mapping = aes(x = date, y = stopsperday, color = stoptype, group = stoptype)) + 
+  geom_line() + 
+  scale_x_date(date_labels = "%m-%Y")
+  
+stops_plot1 <- dsample %>% #Ploting only by Racial Category Facets (Non-Hispanic and Hispanic, combined)
+  mutate(date = as.Date(datetimeoccur)) %>% 
+  count(date, race, name = "rstopsperday")
+stops_plot1
+
+ggplot(data = stops_plot1, mapping = aes(x = date, y = rstopsperday, color = race, group = race)) + 
+  geom_line() +
+  scale_x_date(date_labels = "%m-%Y") +
+  facet_wrap(~race) #Unfortunately, I was not able to figure out how to combine types of stops with race categories. 
+  
+
+##Modeling analysis
+# I will be running a multinomial logit regression to test for the likelihoods of a person being stopped while walking or in a vehicle, while controlling for race, age, and gender. Multinomial logit (mlogit) regressions are useful for predicting for probabilities, while controlling for social characteristics. Given that the dependent variable (stop type) is a categorical variable and not numerical, the mlogit will provide a stronger result than a OLS regression. I am including typical control variables like age and gender, though controlling for educational attainment, class status, homeownership, and employment status would be strengthen the model. Likewise, with more time, geoographic information could be used to test for the effects of race on stop type accross different districts. 
+
+#Preparing variables for analysis
+table(dsample$stoptype)
+
+dsample$stoptype <- factor(as.numeric(as.factor(dsample$stoptype))) #Formating data
+dsample$stoptype <- relevel(dsample$stoptype, ref = "2") #Establishing vehicle as reference
+levels(dsample$stoptype)
+
+levels(dsample$stoptype) <- c("vehicle","pedestrian")
+
+OIM <- multinom(stoptype ~ 1, data = dsample) #Running single intercept test
+summary(OIM)
+
+#Run a multinomial model
+multi_mo <- multinom(stoptype ~ race + age + gender, data = dsample,model=TRUE, na.action(na.omit))
+summary (multi_mo)
+stargazer(multi_mo, title = "Multinominal Logit Regression Predicting Stop Type by Race", type = "text",
+  dep.var.labels=c("Pedestrian"),
+  covariate.labels=c("Native American","White (Black=1)","Age",
+  "Male (Female=1)","Latino"), out="models.txt")
+
+exp(coef(multi_mo))
+head(round(fitted(multi_mo), 2))
+
+#Diagnostics
+z <- summary(multi_mo)$coefficients/summary(multi_mo)$standard.errors #Z-score test
+z
+
+p <- (1 - pnorm(abs(z), 0, 1)) * 2 #2-tailed z score
+p
+
+dsample$predicted <- predict(multi_mo, newdata = dsample$stoptype) #Predicted probabilities
+
+#Diagnostics need to be further verified. But results may indicate that Whites have 16.9% less odds being involved in a pedestrian stop, when compared to Black or African Americans. Native Americans possess the highest odds of being stopped while walking, when compared to Black or African Americans, followed by Latinos. The mlogit function can be rather restrictive, and in the future I may opt to explore the glmnet package, which can better integrate predicted probabilities and diagnostic tests. 
+
+
+```
