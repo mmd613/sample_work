@@ -1,0 +1,254 @@
+---
+title: "Student Mental Health Provider Fall24 Tracking"
+author: "Mario Mercado Diaz"
+date: "2024-10-09"
+output: html_document
+---
+
+````{r}
+library(pacman)
+p_load(qualtRics, dplyr, purrr, stringr, tidyr, writexl, lubridate, readxl, ggplot2, aweek, pointblank)
+
+##Setting Qualtrics credentials
+usethis::edit_r_environ()
+
+QUALTRICS_API_KEY <- Sys.getenv("QUALTRICS_API_KEY")
+QUALTRICS_BASE_URL <- Sys.getenv("QUALTRICS_BASE_URL")
+
+qualtrics_api_credentials(api_key = QUALTRICS_API_KEY,
+                          			base_url = QUALTRICS_BASE_URL,
+                          			)
+````
+
+##Loading Qualtrics data for SMHP Coaching log
+```{r message=FALSE, warning=FALSE}
+
+
+survey_list <- all_surveys()
+smhplog_0930_raw <- fetch_survey(surveyID = "SV_ebLUpsH8ZEPhu8m",  
+                            force_request = TRUE)
+smhplog_1007_raw <- fetch_survey(surveyID = "SV_9GmDxLBiPZgtufA", 
+                            force_request = TRUE)
+smhplog_1014_raw <- fetch_survey(surveyID = "SV_1M1rRQPlgEVmp2S", 
+                            force_request = TRUE)  
+smhplog_1021_raw <- fetch_survey(surveyID = "SV_eQInu6LJxVGmWkC", 
+                            force_request = TRUE)  
+smhplog_1028_raw <- fetch_survey(surveyID = "SV_eQfb4erhAbgcez4", 
+                            force_request = TRUE) 
+smhplog_1104_raw <- fetch_survey(surveyID = "SV_82ZoGoCiOj35pAO", 
+                             force_request = TRUE)                             
+smhplog_1111_raw <- fetch_survey(surveyID = "SV_a93xzlZo1GjW7sO", 
+                            force_request = TRUE)  
+smhplog_1118_raw <- fetch_survey(surveyID = "SV_9t2n9Yk7rwJVdky", 
+                            force_request = TRUE)  
+smhplog_1125_raw <- fetch_survey(surveyID = "SV_1UlWgWkyzmquvKC",  
+                            force_request = TRUE) 
+smhplog_1202_raw <- fetch_survey(surveyID = "SV_0CD1EQRDE6qwBmK",  
+                            force_request = TRUE)                             
+smhplog_1209_raw <- fetch_survey(surveyID = "SV_bDaXwj01N9XLhXg", 
+                            force_request = TRUE)   
+smhplog_1216_raw <- fetch_survey(surveyID = "SV_7UkoW9nfVA3sWgu", 
+                            force_request = TRUE)                             
+smhplog_0106_raw <- fetch_survey(surveyID = "SV_54rOPBZfdWwjjhA", 
+                            force_request = TRUE)
+smhplog_0113_raw <- fetch_survey(surveyID = "SV_8B55VD9XsSzrTam", 
+                            force_request = TRUE)
+smhplog_0120_raw <- fetch_survey(surveyID = "SV_3ZNz1tQTCShjBps", 
+                            force_request = TRUE)
+smhplog_0210_raw <- fetch_survey(surveyID = "SV_e3g7BDrIMlgBm3I", 
+                            force_request = TRUE)
+smhplog_0217_raw <- fetch_survey(surveyID = "SV_b3YJDcCesb091gW", 
+                            force_request = TRUE)
+smhplog_0224_raw <- fetch_survey(surveyID = "SV_6mobd0yAnXXUyj4", 
+                            force_request = TRUE)
+smhplog_0303_raw <- fetch_survey(surveyID = "SV_50x94ESpXah7lOK", 
+                            force_request = TRUE)
+smhplog_0310_raw <- fetch_survey(surveyID = "SV_6y44yyzUhR9DCAK", 
+                            force_request = TRUE)
+smhplog_0317_raw <- fetch_survey(surveyID = "SV_3fluy6L3LLWjb3E", 
+                            force_request = TRUE)
+smhplog_0324_raw <- fetch_survey(surveyID = "SV_0ONXS6t5ibku5H8", 
+                            force_request = TRUE)
+smhplog_0331_raw <- fetch_survey(surveyID = "SV_6Qcw1B5MHfpT2vQ", 
+                            force_request = TRUE)
+smhplog_0407_raw <- fetch_survey(surveyID = "SV_e4o3MH7l3NgndAy", 
+                            force_request = TRUE)
+
+
+week <- c("24") #TODO Switch week number
+smhplog_0407_raw$week  <- week
+```
+                            
+                            
+##Fetch survey and join to others
+                   
+```{r}
+smhplog_0930 <- smhplog_0930_raw %>% 
+  mutate(across(c(`Q1.5_7_TEXT`, `Q1.9`, `Q1.39`, `Q1.6_1_2`, `Q1.6_1_3`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_1007 <- smhplog_1007_raw %>% 
+  mutate(across(c(`Q1.6_1_2`, `Q1.6_1_3`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_1014 <- smhplog_1014_raw %>% 
+  mutate(across(c(`Q1.6_1_2`, `Q1.6_1_3`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_1021 <- smhplog_1021_raw %>% 
+  mutate(across(c(`Q1.5_7_TEXT`, `Q1.12`, `Q1.6_1_2`, `Q1.6_1_3`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_1028 <- smhplog_1028_raw %>% 
+  mutate(across(c(`Q1.6_1_2`, `Q1.6_1_3`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_1104 <- smhplog_1104_raw %>% 
+  mutate(across(c(`Q1.6_1_2`, `Q1.6_1_3`, `Q1.11`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_1111 <- smhplog_1111_raw %>% 
+    mutate(across(c(`Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_1118 <- smhplog_1118_raw %>% 
+    mutate(across(c(`Q1.6_2_1`, `Q1.5_7_TEXT`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_1125 <- smhplog_1125_raw %>% 
+  mutate(across(c(`Q1.5_7_TEXT`, `Q1.6_2_1`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_1202 <- smhplog_1202_raw %>% 
+  mutate(across(c(`Q1.5_7_TEXT`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_1209 <- smhplog_1209_raw %>% 
+  mutate(across(c(`Q1.5_7_TEXT`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_1216 <- smhplog_1216_raw %>% 
+  mutate(across(c(`Q1.6_1_2`, `Q1.6_1_3`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_0106 <- smhplog_0106_raw %>% 
+  mutate(across(c(`Q1.6_1_2`, `Q1.6_1_3`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_0120 <- smhplog_0120_raw %>% 
+  mutate(across(c(`Q1.6_1_2`, `Q1.6_1_3`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_0210 <- smhplog_0210_raw %>% 
+  mutate(across(c(`Q1.6_1_2`, `Q1.6_1_3`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_0217 <- smhplog_0217_raw %>% 
+  mutate(across(c(`Q1.6_1_2`, `Q1.6_1_3`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_0224 <- smhplog_0224_raw %>% 
+  mutate(across(c(`Q1.6_1_2`, `Q1.6_1_3`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_0303 <- smhplog_0303_raw %>% 
+  mutate(across(c(`Q1.6_1_2`, `Q1.6_1_3`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_0310 <- smhplog_0310_raw %>% 
+  mutate(across(c(`Q1.6_1_2`, `Q1.6_1_3`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_0317 <- smhplog_0317_raw %>% 
+  mutate(across(c(`Q1.6_1_2`, `Q1.6_1_3`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_0324 <- smhplog_0324_raw %>% 
+  mutate(across(c(`Q1.6_1_2`, `Q1.6_1_3`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_0331 <- smhplog_0331_raw %>% 
+  mutate(across(c(`Q1.6_1_2`, `Q1.6_1_3`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+smhplog_0407 <- smhplog_0407_raw %>% 
+  mutate(across(c(`Q1.6_1_2`, `Q1.6_1_3`, `Q1.6_2_1`, `Q1.4_7_TEXT`, `Q1.5_7_TEXT`), as.character))
+
+smhplogs_todate_raw <- bind_rows(smhplog_0930, smhplog_1007, smhplog_1014, 
+                                 smhplog_1021, smhplog_1028, smhplog_1104,
+                                 smhplog_1111, smhplog_1118, smhplog_1125,
+                                 smhplog_1202, smhplog_1209, smhplog_1216,
+                                 smhplog_0106, smhplog_0120, #SMHP JAN 13 not included, 0 responses
+                                 smhplog_0210, smhplog_0217, smhplog_0224,
+                                 smhplog_0303, smhplog_0310, smhplog_0317, 
+                                 smhplog_0331, smhplog_0407) 
+
+
+
+
+```
+
+
+##Cleaning through data
+
+```{r}
+# CB_SMHP <- read_excel("/Users/mariomercadodiaz/Documents/R/Cohort B SMHPs.xlsx") #Pulling names of SMHPs from CRM
+smhplogs_todate <- smhplogs_todate_raw %>% 
+  select(18:19, 20:128, 134:169, 292, 309:312) %>% #Subsetting for group and individual attendance, LC attendance, barriers report, component delivery, and week.  
+  mutate(fullname = str_c(FirstName, LastName, sep = " "), #Joining names for creating unique ids
+         fullname = str_to_title(fullname) #Changing all names to sentence case
+         ) %>% 
+  filter(Email %in% CB_SMHP$Email, ignore.case = TRUE) #Subsetting to impact study SMHPs
+smhplogs_todate
+```
+
+```{r}
+smhplogs_todate <- smhplogs_todate %>% 
+  mutate(rungroup = if_else(`Q1.3_1` == "Running TRAILS CBT student groups", 1, 0), #Collapsing and renaming columns for easier data manipulation: Dummy for running groups
+         indvstudnt = if_else(`Q1.3_2` == "Working with individual students", 1, 0) #Collapsing and renaming columns for easier data manipulation: Dummy for meeting with students
+      ) %>% 
+  rename(numgrps = 3, # Number of groups organized
+         numstdnt = 5,  # Number of indv. students
+         numstdnt_oth = 6  # Number of indv. students
+         )
+colnames(smhplogs_todate)[310] <- "firstname" #Renaming variables
+colnames(smhplogs_todate)[311] <- "lastname"
+numgrpsess_colnms_spr <- c("Q1.6_1_1", "Q1.6_2_1", "Q1.6_3_1", "Q1.6_4_1", "Q1.6_5_1") #Calculating total number of group sessions per week
+totstudentgrp_colnms_spr <- c("Q1.6_1_2", "Q1.6_2_2", "Q1.6_3_2", "Q1.6_4_2", "Q1.6_5_2") #Calculating total number of students in groups per SMHP
+totgrpatt_colnms_spr <- c("Q1.6_1_3", "Q1.6_2_3", "Q1.6_3_3", "Q1.6_4_3", "Q1.6_5_3") #Calculating total number of students that attended groups per week per SMHP
+numstusess_colnms_fall <- c("Q1.7#1_1", "Q1.7#1_2", "Q1.7#1_3", "Q1.7#1_4", "Q1.7#1_5") #Calculating total number of indv. sessions per week
+smhplogs_todate <- smhplogs_todate %>% 
+  mutate(across(c(numgrpsess_colnms_spr, totstudentgrp_colnms_spr, totgrpatt_colnms_spr, numstusess_colnms_fall), as.numeric)) %>% 
+  rowwise() %>% 
+  mutate(totgrpsess = sum(c_across(numgrpsess_colnms_spr), na.rm = TRUE),
+         totstudentgrp = sum(c_across(totstudentgrp_colnms_spr), na.rm = TRUE),
+         totgrpatt = sum(c_across(totgrpatt_colnms_spr), na.rm = TRUE),
+         grpattrate = totgrpatt / totstudentgrp, #Calculating attendance rate
+         totindvsess = sum(c_across(numstusess_colnms_fall), na.rm = TRUE)
+         ) %>% 
+  ungroup()
+```
+
+```{r}
+q_prefix <- c("Q1.6_1_4_", "Q1.6_2_4_", "Q1.6_3_4_", "Q1.6_4_4_", "Q1.6_5_4_", "Q1.7#2_1_", "Q1.7#2_2_", 'Q1.7#2_3_', 'Q1.7#2_4_', 'Q1.7#2_5_')
+smhplogs_todate <- smhplogs_todate %>% 
+  mutate(across(str_c(q_prefix, "1"), list(learning = ~. == "Learning about Emotions, Anxiety, and Depression")),
+         across(str_c(q_prefix, "2"), list(cbtm = ~.== "Cognitive Behavioral Therapy Model")),
+         across(str_c(q_prefix, "3"), list(relax = ~.== "Relaxation and Mindfulness")),
+         across(str_c(q_prefix, "4"), list(ccneg = ~.== "Cognitive Coping: Automatic Negative Thoughts")),
+         across(str_c(q_prefix, "5"), list(copingthoughts = ~.== "Cognitive Coping: Coping Thoughts")),
+         across(str_c(q_prefix, "6"), list(behavact = ~.== "Behavioral Activation")),
+         across(str_c(q_prefix, "7"), list(introexp = ~.== "Introduction to Exposure")),
+         across(str_c(q_prefix, "8"), list(practexpo = ~.== "Practicing Exposure")),
+         ) %>% 
+  rowwise() %>% 
+  mutate(cmpdlvr_learning = sum(c_across(ends_with("learning")), na.rm=TRUE),
+         cmpdlvr_cbtm = sum(c_across(ends_with("cbtm")), na.rm=TRUE),
+         cmpdlvr_relax = sum(c_across(ends_with("relax")), na.rm=TRUE),
+         cmpdlvr_ccneg = sum(c_across(ends_with("ccneg")), na.rm=TRUE),
+         cmpdlvr_copingthoughts = sum(c_across(ends_with("copingthoughts")), na.rm=TRUE),
+         cmpdlvr_behavact = sum(c_across(ends_with("behavact")), na.rm=TRUE),
+         cmpdlvr_introexp= sum(c_across(ends_with("introexp")), na.rm=TRUE),
+         cmpdlvr_practexpo = sum(c_across(ends_with("practexpo")), na.rm=TRUE)
+         ) %>% 
+  ungroup() |> 
+  select(-ends_with("learning"), -ends_with("cbtm"),
+         -ends_with("relax"),-ends_with("ccneg"),
+         -ends_with("copingthoughts"),-ends_with("behavact"),
+         -ends_with("introexp"),-ends_with("practexpo"),
+         starts_with("cmpdlvr")
+         )
+```
+
+```{r} 
+numstusess_colnms_fall=c("Q1.7#1_1", "Q1.7#1_2", "Q1.7#1_3", "Q1.7#1_4", "Q1.7#1_5") #Calculating total number of indv. sessions per week
+smhplogs_todate[, c("Q1.7#1_1", "Q1.7#1_2", "Q1.7#1_3", "Q1.7#1_4", "Q1.7#1_5")] <- lapply(smhplogs_todate[, c("Q1.7#1_1", "Q1.7#1_2", "Q1.7#1_3", "Q1.7#1_4", "Q1.7#1_5")], as.numeric)
+smhplogs_todate$totindvsess<-rowSums(smhplogs_todate[,numstusess_colnms_fall], na.rm = T)
+
+```
+
+```{r}
+smhplogs_todate_clean <- smhplogs_todate |> 
+  mutate(
+        barr_studabsc = if_else(Q1.10_1 == "Student absences", 1, 0), # Dummy for barriers: Student absences
+        barr_protecmytime = if_else(Q1.10_2 == "Difficulty protecting my time", 1, 0), # Dummy for barriers: Difficulty protecting SMHP time
+        barr_studtime = if_else(Q1.10_3 == "Difficulty protecting student time", 1, 0), # Dummy for barriers: Difficulty protecting student time
+        barr_nosupp = if_else(Q1.10_4 == "Lack of support from administration", 1, 0), # Dummy for barriers: Lack of support from admins
+        barr_nospace = if_else(Q1.10_5 == "No protected space to work with students", 1, 0), # Dummy for barriers: No space to work in
+        barr_difforg = if_else(Q1.10_6 == "Difficulty organizing to plan and execute group", 1, 0), # Dummy for barriers: Difficulty organizing group
+        barr_lowconf = if_else(Q1.10_7 == "Low confidence in CBT skills", 1, 0), # Dummy for barriers: Low confidence on CBT skills
+        barr_lowreff = if_else(Q1.10_8 == "Low referrals to group", 1, 0), # Dummy for barriers: Low referrals
+        barr_refuse = if_else(Q1.10_9 == "Teachers refuse to allow students to leave class to participate", 1, 0), # Dummy for barriers: Teachers interfering 
+        barr_respon = if_else(Q1.10_10== "Being pulled into other school responsibilities (e.g., substitute teaching)", 1, 0), # Dummy for barriers: Other school respon
+        barr_notapp = if_else(Q1.10_11== "TRAILS CBT is not appropriate for students from diverse backgrounds", 1, 0), # Dummy for barriers: TRAILS not appropriate 
+        barr_other = if_else(Q1.10_9== "Not listed. Please describe:", 1, 0), # Dummy for barriers: Student absences
+        att_coach = if_else(Q1.39 == "Yes", 1, 0) # Dummy for attended LC
+  ) |> 
+  rename(otherbarr_desc = 127)
+smhplogs_todate_clean %>% 
+    group_by(fullname) %>% 
+    summarise(otherbarr_desc = str_c(unique(otherbarr_desc), collapse = ', '))
+    
+smhplogs_todate_clean$att_coach <- ifelse(smhplogs_todate$Q1.39== "Yes", 1, 0) # Dummy for attended LC
+
+smhplogs_todate_clean <- smhplogs_todate_clean[,c(3,5:6,127,152:181)] #Subsetting for clean version
+```
+
+write_xlsx(smhplogs_todate_clean,"/Users/mariomercadodiaz/Documents/R/IES 24-25 SMHP Tracking/SMHPLog_20250416.xlsx") #TODO update date 
+
